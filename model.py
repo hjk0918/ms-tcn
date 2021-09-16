@@ -12,13 +12,13 @@ class MultiStageModel(nn.Module):
     def __init__(self, num_stages, num_layers, num_f_maps, dim, num_classes):
         super(MultiStageModel, self).__init__()
         self.stage1 = SingleStageModel(num_layers, num_f_maps, dim, num_classes)
-        self.stages = nn.ModuleList([copy.deepcopy(SingleStageModel(num_layers, num_f_maps, num_classes, num_classes)) for s in range(num_stages-1)])
+        self.stages = nn.ModuleList([copy.deepcopy(SingleStageModel(num_layers, num_f_maps, num_classes, num_classes)) for s in range(num_stages)])
 
     def forward(self, x, mask):
         out = self.stage1(x, mask)
         outputs = out.unsqueeze(0)
-        for s in self.stages:
-            out = s(F.softmax(out, dim=1) * mask[:, 0:1, :], mask)
+        for s in self.stages:                                       # we have 4 stages (4 SingleStageModels) in total
+            out = s(F.softmax(out, dim=1) * mask[:, 0:1, :], mask)  
             outputs = torch.cat((outputs, out.unsqueeze(0)), dim=0)
         return outputs
 
@@ -55,23 +55,23 @@ class DilatedResidualLayer(nn.Module):
 class Trainer:
     def __init__(self, num_blocks, num_layers, num_f_maps, dim, num_classes):
         self.model = MultiStageModel(num_blocks, num_layers, num_f_maps, dim, num_classes)
-        self.ce = nn.CrossEntropyLoss(ignore_index=-100)
+        self.ce = nn.CrossEntropyLoss(ignore_index=-100) # -100 will be ignored because it's beyond the length of the video
         self.mse = nn.MSELoss(reduction='none')
         self.num_classes = num_classes
 
     def train(self, save_dir, batch_gen, num_epochs, batch_size, learning_rate, device):
-        self.model.train()
-        self.model.to(device)
+        self.model.train()      # set model to train mode (only affective to some models)
+        self.model.to(device)   # load model to device(GPU)
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         for epoch in range(num_epochs):
-            epoch_loss = 0
-            correct = 0
-            total = 0
+            epoch_loss = 0  # ??
+            correct = 0     # ??
+            total = 0       # ??
             while batch_gen.has_next():
-                batch_input, batch_target, mask = batch_gen.next_batch(batch_size)
-                batch_input, batch_target, mask = batch_input.to(device), batch_target.to(device), mask.to(device)
-                optimizer.zero_grad()
-                predictions = self.model(batch_input, mask)
+                batch_input, batch_target, mask = batch_gen.next_batch(batch_size)  # fetch data from batch_generator
+                batch_input, batch_target, mask = batch_input.to(device), batch_target.to(device), mask.to(device) # load data to device
+                optimizer.zero_grad()   # initialize all the gradients to be zero
+                predictions = self.model(batch_input, mask) # get prediction of the data by the existing model
 
                 loss = 0
                 for p in predictions:
@@ -87,33 +87,33 @@ class Trainer:
                 total += torch.sum(mask[:, 0, :]).item()
 
             batch_gen.reset()
-            torch.save(self.model.state_dict(), save_dir + "/epoch-" + str(epoch + 1) + ".model")
-            torch.save(optimizer.state_dict(), save_dir + "/epoch-" + str(epoch + 1) + ".opt")
+            torch.save(self.model.state_dict(), save_dir + "/epoch-" + str(epoch + 1) + ".model") # save the model checkpoint
+            torch.save(optimizer.state_dict(), save_dir + "/epoch-" + str(epoch + 1) + ".opt") # save the optimizer checkpoint
             print("[epoch %d]: epoch loss = %f,   acc = %f" % (epoch + 1, epoch_loss / len(batch_gen.list_of_examples),
                                                                float(correct)/total))
 
     def predict(self, model_dir, results_dir, features_path, vid_list_file, epoch, actions_dict, device, sample_rate):
-        self.model.eval()
+        self.model.eval() # set the model to evaluation mode
         with torch.no_grad():
             self.model.to(device)
-            self.model.load_state_dict(torch.load(model_dir + "/epoch-" + str(epoch) + ".model"))
+            self.model.load_state_dict(torch.load(model_dir + "/epoch-" + str(epoch) + ".model")) # load model
             file_ptr = open(vid_list_file, 'r')
-            list_of_vids = file_ptr.read().split('\n')[:-1]
+            list_of_vids = file_ptr.read().split('\n')[:-1] # read video list
             file_ptr.close()
             for vid in list_of_vids:
-                print vid
-                features = np.load(features_path + vid.split('.')[0] + '.npy')
+                print(vid)
+                features = np.load(features_path + vid.split('.')[0] + '.npy').T # load video features
                 features = features[:, ::sample_rate]
                 input_x = torch.tensor(features, dtype=torch.float)
                 input_x.unsqueeze_(0)
                 input_x = input_x.to(device)
-                predictions = self.model(input_x, torch.ones(input_x.size(), device=device))
-                _, predicted = torch.max(predictions[-1].data, 1)
-                predicted = predicted.squeeze()
+                predictions = self.model(input_x, torch.ones(input_x.size(), device=device)) # in shape (5, 1, C, N)
+                _, predicted = torch.max(predictions[-1].data, 1)   # get the prediction from last model, in shape (1, N)
+                predicted = predicted.squeeze()                     # get predicted sequence in shape (N)
                 recognition = []
                 for i in range(len(predicted)):
-                    recognition = np.concatenate((recognition, [actions_dict.keys()[actions_dict.values().index(predicted[i].item())]]*sample_rate))
-                f_name = vid.split('/')[-1].split('.')[0]
+                    recognition = np.concatenate((recognition, [list(actions_dict.keys())[list(actions_dict.values()).index(predicted[i].item())]]*sample_rate))
+                f_name = vid.split('/')[-1].split('.')[0]+".txt"
                 f_ptr = open(results_dir + "/" + f_name, "w")
                 f_ptr.write("### Frame level recognition: ###\n")
                 f_ptr.write(' '.join(recognition))

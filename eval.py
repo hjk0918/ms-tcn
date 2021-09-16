@@ -1,6 +1,3 @@
-#!/usr/bin/python2.7
-# adapted from: https://github.com/colincsl/TemporalConvolutionalNetworks/blob/master/code/metrics.py
-
 import numpy as np
 import argparse
 
@@ -98,9 +95,9 @@ def main():
 
     args = parser.parse_args()
 
-    ground_truth_path = "./data/"+args.dataset+"/groundTruth/"
-    recog_path = "./results/"+args.dataset+"/split_"+args.split+"/"
-    file_list = "./data/"+args.dataset+"/splits/test.split"+args.split+".bundle"
+    ground_truth_path = 'C:/github/casual_tcn/cholec80/groundtruth/'
+    recog_path = "./results/"
+    file_list = 'C:/github/casual_tcn/cholec80/test.txt'
 
     list_of_videos = read_file(file_list).split('\n')[:-1]
 
@@ -112,10 +109,12 @@ def main():
     edit = 0
 
     for vid in list_of_videos:
-        gt_file = ground_truth_path + vid
+        gt_file = ground_truth_path + vid.split('.')[0] + ".txt"
         gt_content = read_file(gt_file).split('\n')[0:-1]
+        for i in range(len(gt_content)):
+            gt_content[i] = gt_content[i].split('\t')[1]
         
-        recog_file = recog_path + vid.split('.')[0]
+        recog_file = recog_path + vid.split('.')[0] + ".txt"
         recog_content = read_file(recog_file).split('\n')[1].split()
 
         for i in range(len(gt_content)):
@@ -131,8 +130,8 @@ def main():
             fp[s] += fp1
             fn[s] += fn1
             
-    print "Acc: %.4f" % (100*float(correct)/total)
-    print 'Edit: %.4f' % ((1.0*edit)/len(list_of_videos))
+    print("Acc: %.4f" % (100*float(correct)/total))
+    print('Edit: %.4f' % ((1.0*edit)/len(list_of_videos)))
     for s in range(len(overlap)):
         precision = tp[s] / float(tp[s]+fp[s])
         recall = tp[s] / float(tp[s]+fn[s])
@@ -140,7 +139,7 @@ def main():
         f1 = 2.0 * (precision*recall) / (precision+recall)
 
         f1 = np.nan_to_num(f1)*100
-        print 'F1@%0.2f: %.4f' % (overlap[s], f1)
+        print('F1@%0.2f: %.4f' % (overlap[s], f1))
 
 
 if __name__ == '__main__':
